@@ -1,9 +1,13 @@
 # quickpix
 
+[![npm version](https://img.shields.io/npm/v/quickpix)](https://www.npmjs.com/package/quickpix)
+[![npm bundle size](https://img.shields.io/bundlephobia/minzip/quickpix)](https://bundlephobia.com/package/quickpix)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://www.npmjs.com/package/quickpix)
+[![license](https://img.shields.io/npm/l/quickpix)](./LICENSE)
+
 [한국어](./README.ko.md)
 
-High-performance image resize library for browsers and Node.js.
-Rust/WASM SIMD accelerated with pure JS fallback. **2–5x faster** than pica.
+High-performance image resize for browsers and Node.js. Rust/WASM accelerated with pure JS fallback. Zero dependencies.
 
 ```bash
 npm install quickpix

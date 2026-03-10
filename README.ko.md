@@ -1,9 +1,14 @@
 # quickpix
 
+[![npm version](https://img.shields.io/npm/v/quickpix)](https://www.npmjs.com/package/quickpix)
+[![npm bundle size](https://img.shields.io/bundlephobia/minzip/quickpix)](https://bundlephobia.com/package/quickpix)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://www.npmjs.com/package/quickpix)
+[![license](https://img.shields.io/npm/l/quickpix)](./LICENSE)
+
 [English](./README.md)
 
 고성능 브라우저/Node.js 이미지 리사이즈 라이브러리.
-Rust/WASM SIMD 가속 + 순수 JS fallback. pica 대비 **2~5배 빠른** 리사이즈 성능.
+Rust/WASM SIMD 가속 + 순수 JS fallback. 외부 의존성 없음.
 
 ```bash
 npm install quickpix
