@@ -1,6 +1,6 @@
 {
   "name": "quickpix",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "High-performance image resize for browsers and Node.js. Rust/WASM accelerated, zero dependencies, pure JS fallback.",
   "type": "module",
   "main": "./js/src/index.js",
