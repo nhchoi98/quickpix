@@ -1,0 +1,21 @@
+# Rust source and build
+crates/core/
+crates/wasm/src/
+crates/wasm/Cargo.toml
+target/
+.cargo/
+Cargo.toml
+Cargo.lock
+
+# Benchmarks and tests
+bench/
+js/tests/
+
+# Dev files
+.github/
+.gitignore
+*.md
+!README.md
+
+# Do NOT ignore WASM build output (override .gitignore)
+!crates/wasm/pkg/

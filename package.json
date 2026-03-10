@@ -1,0 +1,103 @@
+{
+  "name": "quickpix",
+  "version": "0.1.0",
+  "description": "High-performance image resize for browsers and Node.js. Rust/WASM accelerated with JS fallback.",
+  "type": "module",
+  "main": "./js/src/index.js",
+  "module": "./js/src/index.js",
+  "types": "./js/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./js/src/index.d.ts",
+      "import": "./js/src/index.js",
+      "default": "./js/src/index.js"
+    },
+    "./easy": {
+      "types": "./js/src/easy.d.ts",
+      "import": "./js/src/easy.js"
+    },
+    "./metadata": {
+      "types": "./js/src/metadata.d.ts",
+      "import": "./js/src/metadata.js"
+    },
+    "./decode": {
+      "types": "./js/src/decode.d.ts",
+      "import": "./js/src/decode.js"
+    },
+    "./encode": {
+      "types": "./js/src/encode.d.ts",
+      "import": "./js/src/encode.js"
+    },
+    "./utils": {
+      "types": "./js/src/utils.d.ts",
+      "import": "./js/src/utils.js"
+    },
+    "./fallback": {
+      "import": "./js/src/fallback.js"
+    }
+  },
+  "files": [
+    "js/src/index.js",
+    "js/src/index.d.ts",
+    "js/src/easy.js",
+    "js/src/easy.d.ts",
+    "js/src/fallback.js",
+    "js/src/decode.js",
+    "js/src/decode.d.ts",
+    "js/src/encode.js",
+    "js/src/encode.d.ts",
+    "js/src/utils.js",
+    "js/src/utils.d.ts",
+    "js/src/metadata.js",
+    "js/src/metadata.d.ts",
+    "js/src/wasm-loader.js",
+    "js/src/resize-worker.js",
+    "js/src/pipeline-worker.js",
+    "js/src/worker-pool.js",
+    "js/src/worker-pool.d.ts",
+    "js/src/wasm/quickpix_wasm.js",
+    "js/src/wasm/quickpix_wasm.d.ts",
+    "js/src/wasm/quickpix_wasm_bg.wasm",
+    "js/src/wasm/quickpix_wasm_bg.wasm.d.ts",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build:rust": "cargo build --workspace --release",
+    "build:wasm": "cd crates/wasm && wasm-pack build --target web --out-dir pkg --out-name quickpix_wasm && cp pkg/quickpix_wasm.js pkg/quickpix_wasm.d.ts pkg/quickpix_wasm_bg.wasm pkg/quickpix_wasm_bg.wasm.d.ts ../../js/src/wasm/",
+    "prepublishOnly": "npm run build:wasm",
+    "bench": "node ./bench/resize-bench.mjs",
+    "bench:quality": "node ./bench/quality-bench.mjs",
+    "bench:compare": "node ./bench/compare-bench.mjs",
+    "bench:memory": "node --expose-gc ./bench/memory-bench.mjs",
+    "bench:native": "node ./bench/native-bench.mjs",
+    "test:rust": "cargo test -p quickpix_core",
+    "test:js": "node --test"
+  },
+  "keywords": [
+    "image",
+    "resize",
+    "resample",
+    "lanczos",
+    "bilinear",
+    "wasm",
+    "webassembly",
+    "canvas",
+    "pica",
+    "thumbnail",
+    "exif"
+  ],
+  "author": "nhchoi98",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nhchoi98/quickpix.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nhchoi98/quickpix/issues"
+  },
+  "homepage": "https://github.com/nhchoi98/quickpix#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false
+}
