@@ -42,6 +42,7 @@
     "js/src/easy.js",
     "js/src/easy.d.ts",
     "js/src/fallback.js",
+    "js/src/chunked-resize.js",
     "js/src/decode.js",
     "js/src/decode.d.ts",
     "js/src/encode.js",

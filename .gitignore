@@ -9,6 +9,7 @@ target/
 
 # Node / frontend
 node_modules/
+test_set/
 dist/
 build/
 *.log

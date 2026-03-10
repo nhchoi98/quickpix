@@ -507,3 +507,6 @@ export const FILTER_NAMES = {
   hamming: "hamming",
   lanczos: "lanczos",
 };
+
+// Exposed for chunked-resize pipeline
+export { computeAxisKernels, normalizeFilter, roundToU8 };

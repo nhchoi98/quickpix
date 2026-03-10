@@ -9,8 +9,9 @@ import { QuickPix } from "./index.js";
 import { decodeBlob, decodeBlobWithOrientation, hasCreateImageBitmap, hasOffscreenCanvas } from "./decode.js";
 import { encodeToBlob } from "./encode.js";
 import { computeTargetSize, normalizeSource, getImageSize } from "./utils.js";
-import { readOrientation, extractSegments, injectSegments } from "./metadata.js";
+import { readOrientation, extractSegments, injectSegments, orientationTransform } from "./metadata.js";
 import { WorkerPool } from "./worker-pool.js";
+import { resizeFromContext } from "./chunked-resize.js";
 
 const PIPELINE_WORKER_URL = new URL("./pipeline-worker.js", import.meta.url).toString();
 
@@ -329,23 +330,68 @@ export class QuickPixEasy {
       }
     }
 
-    // Decode
-    const decoded = orientation > 1
-      ? await decodeBlobWithOrientation(blob, orientation)
-      : await decodeBlob(blob);
+    // Check image size to decide chunked vs full path
+    const size = await getImageSize(blob);
+    const CHUNKED_THRESHOLD = 4096 * 4096;
+    const totalPixels = size.width * size.height;
+    let resultData;
 
-    // Resize
-    const result = await this._engine.resizeBuffer(
-      decoded.data,
-      decoded.width,
-      decoded.height,
-      width,
-      height,
-      { filter: opts.filter }
-    );
+    if (totalPixels > CHUNKED_THRESHOLD && hasCreateImageBitmap()) {
+      // Large image: chunked path via canvas strips
+      const bitmap = await createImageBitmap(blob);
+      let srcW = bitmap.width;
+      let srcH = bitmap.height;
+      let canvas, ctx;
+
+      if (orientation > 1) {
+        const transform = orientationTransform(orientation, srcW, srcH);
+        if (hasOffscreenCanvas()) {
+          canvas = new OffscreenCanvas(transform.width, transform.height);
+        } else {
+          canvas = document.createElement("canvas");
+          canvas.width = transform.width;
+          canvas.height = transform.height;
+        }
+        ctx = canvas.getContext("2d", { willReadFrequently: true });
+        transform.apply(ctx);
+        ctx.drawImage(bitmap, 0, 0);
+        srcW = transform.width;
+        srcH = transform.height;
+      } else {
+        if (hasOffscreenCanvas()) {
+          canvas = new OffscreenCanvas(srcW, srcH);
+        } else {
+          canvas = document.createElement("canvas");
+          canvas.width = srcW;
+          canvas.height = srcH;
+        }
+        ctx = canvas.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(bitmap, 0, 0);
+      }
+      bitmap.close();
+
+      resultData = resizeFromContext(ctx, srcW, srcH, width, height, opts.filter);
+      canvas = null;
+      ctx = null;
+    } else {
+      // Small/medium image: full decode → engine resize
+      const decoded = orientation > 1
+        ? await decodeBlobWithOrientation(blob, orientation)
+        : await decodeBlob(blob);
+
+      const result = await this._engine.resizeBuffer(
+        decoded.data,
+        decoded.width,
+        decoded.height,
+        width,
+        height,
+        { filter: opts.filter }
+      );
+      resultData = result.data;
+    }
 
     // Encode
-    let resultBlob = await encodeToBlob(result.data, width, height, opts.outputMimeType, opts.outputQuality);
+    let resultBlob = await encodeToBlob(resultData, width, height, opts.outputMimeType, opts.outputQuality);
 
     // Re-inject metadata
     if (opts.preserveMetadata && segments && opts.outputMimeType === "image/jpeg") {

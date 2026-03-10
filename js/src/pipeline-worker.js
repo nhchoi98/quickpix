@@ -12,6 +12,7 @@
  */
 
 import { resizeBufferFallback } from "./fallback.js";
+import { resizeFromContext } from "./chunked-resize.js";
 import { readOrientation, extractSegments, orientationTransform } from "./metadata.js";
 
 let wasmModule = null;
@@ -51,25 +52,8 @@ function toFilterCode(filter) {
   return 1;
 }
 
-async function resizeRGBA(src, srcW, srcH, dstW, dstH, filter, useWasm, wasmPath) {
-  const normalized = parseResizeFilter(filter);
-
-  // Try WASM for heavy filters
-  if (useWasm && normalized !== "bilinear" && normalized !== "nearest") {
-    const wasm = await loadWasm(wasmPath);
-    if (wasm && typeof wasm.resize_rgba === "function") {
-      try {
-        const output = wasm.resize_rgba(src, srcW, srcH, dstW, dstH, toFilterCode(normalized));
-        return { data: new Uint8ClampedArray(output), usedWasm: true };
-      } catch {
-        // fall through to JS
-      }
-    }
-  }
-
-  const data = resizeBufferFallback(src, srcW, srcH, dstW, dstH, normalized);
-  return { data, usedWasm: false };
-}
+// Threshold: images larger than this (in total pixels) use chunked path
+const CHUNKED_THRESHOLD = 4096 * 4096;
 
 async function handlePipeline(msg) {
   const {
@@ -104,7 +88,7 @@ async function handlePipeline(msg) {
     }
   }
 
-  // 2. Decode Blob → pixels
+  // 2. Decode Blob → canvas
   const bitmap = await createImageBitmap(blob);
   let srcW = bitmap.width;
   let srcH = bitmap.height;
@@ -114,24 +98,54 @@ async function handlePipeline(msg) {
   if (autoRotate && orientation > 1) {
     const transform = orientationTransform(orientation, srcW, srcH);
     canvas = new OffscreenCanvas(transform.width, transform.height);
-    ctx = canvas.getContext("2d");
+    ctx = canvas.getContext("2d", { willReadFrequently: true });
     transform.apply(ctx);
     ctx.drawImage(bitmap, 0, 0);
     srcW = transform.width;
     srcH = transform.height;
   } else {
     canvas = new OffscreenCanvas(srcW, srcH);
-    ctx = canvas.getContext("2d");
+    ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(bitmap, 0, 0);
   }
 
   bitmap.close();
-  const srcData = ctx.getImageData(0, 0, srcW, srcH).data;
 
-  // 3. Resize
-  const { data: dstData, usedWasm } = await resizeRGBA(
-    srcData, srcW, srcH, targetWidth, targetHeight, filter, useWasm, wasmPath
-  );
+  // 3. Resize — choose chunked or full path based on image size
+  let dstData;
+  let usedWasm = false;
+  const totalPixels = srcW * srcH;
+  const normalized = parseResizeFilter(filter);
+
+  if (totalPixels > CHUNKED_THRESHOLD) {
+    // Large image: chunked path (strip-based getImageData)
+    dstData = resizeFromContext(ctx, srcW, srcH, targetWidth, targetHeight, normalized);
+    usedWasm = false;
+  } else {
+    // Small/medium image: full getImageData → WASM or fallback
+    const srcData = ctx.getImageData(0, 0, srcW, srcH).data;
+
+    if (useWasm && normalized !== "bilinear" && normalized !== "nearest") {
+      const wasm = await loadWasm(wasmPath);
+      if (wasm && typeof wasm.resize_rgba === "function") {
+        try {
+          const output = wasm.resize_rgba(srcData, srcW, srcH, targetWidth, targetHeight, toFilterCode(normalized));
+          dstData = new Uint8ClampedArray(output);
+          usedWasm = true;
+        } catch {
+          // fall through to JS
+        }
+      }
+    }
+
+    if (!dstData) {
+      dstData = resizeBufferFallback(srcData, srcW, srcH, targetWidth, targetHeight, normalized);
+    }
+  }
+
+  // Release source canvas memory
+  canvas = null;
+  ctx = null;
 
   // 4. Encode → Blob
   const outCanvas = new OffscreenCanvas(targetWidth, targetHeight);
