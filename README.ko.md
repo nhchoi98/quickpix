@@ -34,15 +34,23 @@ const qp = new QuickPixEasy({
 ### Blob/File 리사이즈
 
 ```js
-// 파일 input에서 받은 이미지를 리사이즈
 const input = document.querySelector('input[type="file"]');
 const file = input.files[0];
 
+// 정확한 크기 지정
 const resized = await qp.resizeBlob(file, 1200, 800);
-// resized는 Blob — 바로 URL.createObjectURL() 또는 FormData에 사용 가능
+
+// 너비만 지정 — 높이 자동 계산 (종횡비 유지)
+const resized2 = await qp.resizeBlob(file, 1200, null);
+
+// 높이만 지정 — 너비 자동 계산
+const resized3 = await qp.resizeBlob(file, null, 800);
+
+// 최대 크기 — 긴 쪽 기준 축소
+const resized4 = await qp.resizeBlob(file, null, null, { maxDimension: 4096 });
 
 // resizeFile은 resizeBlob의 별칭
-const resized2 = await qp.resizeFile(file, 1200, 800);
+const resized5 = await qp.resizeFile(file, 1200, null);
 ```
 
 ### 썸네일 생성

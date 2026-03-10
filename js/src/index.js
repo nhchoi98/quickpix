@@ -24,6 +24,7 @@ function parseResizeFilter(value) {
   if (filter === "nearest") return "nearest";
   if (filter === "box") return "box";
   if (filter === "hamming") return "hamming";
+  if (filter === "lanczos2") return "lanczos2";
   if (filter === "lanczos" || filter === "lanczos3") return "lanczos";
   if (filter === "bilinear") return "bilinear";
   return "bilinear";
@@ -34,6 +35,7 @@ function toFilterCode(filter) {
   if (normalized === "nearest") return 0;
   if (normalized === "box") return 2;
   if (normalized === "hamming") return 3;
+  if (normalized === "lanczos2") return 5;
   if (normalized === "lanczos") return 4;
   return 1;
 }

@@ -86,19 +86,41 @@ export class QuickPixEasy {
    * Resize a Blob to exact target dimensions. Returns a new image Blob.
    *
    * @param {Blob} blob
-   * @param {number} width  - Target width
-   * @param {number} height - Target height
+   * @param {number|null} width  - Target width (null to auto-calculate from height)
+   * @param {number|null} height - Target height (null to auto-calculate from width)
    * @param {object} [options]
    * @param {string} [options.filter]
    * @param {string} [options.outputMimeType]
    * @param {number} [options.outputQuality]
    * @param {string} [options.fit]
+   * @param {number} [options.maxDimension] - Max longest side (overrides width/height)
    * @param {boolean} [options.preserveMetadata]
    * @param {boolean} [options.autoRotate]
    * @returns {Promise<Blob>}
    */
   async resizeBlob(blob, width, height, options = {}) {
     this._checkDestroyed();
+
+    // Auto-calculate missing dimension from aspect ratio
+    if (options.maxDimension || !width || !height) {
+      const size = await getImageSize(blob);
+      if (options.maxDimension) {
+        const target = computeTargetSize(size.width, size.height, { maxDimension: options.maxDimension });
+        width = target.width;
+        height = target.height;
+      } else if (!width && height) {
+        const target = computeTargetSize(size.width, size.height, { height });
+        width = target.width;
+        height = target.height;
+      } else if (width && !height) {
+        const target = computeTargetSize(size.width, size.height, { width });
+        width = target.width;
+        height = target.height;
+      } else {
+        width = size.width;
+        height = size.height;
+      }
+    }
 
     const filter = options.filter || this._filter;
     const mimeType = options.outputMimeType || this._outputMimeType;

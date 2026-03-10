@@ -36,11 +36,20 @@ const qp = new QuickPixEasy({
 const input = document.querySelector('input[type="file"]');
 const file = input.files[0];
 
-// Returns a Blob — use with URL.createObjectURL() or FormData
+// Exact dimensions
 const resized = await qp.resizeBlob(file, 1200, 800);
 
+// Width only — height auto-calculated (aspect ratio preserved)
+const resized2 = await qp.resizeBlob(file, 1200, null);
+
+// Height only — width auto-calculated
+const resized3 = await qp.resizeBlob(file, null, 800);
+
+// Max dimension — longest side fits within limit
+const resized4 = await qp.resizeBlob(file, null, null, { maxDimension: 4096 });
+
 // resizeFile is an alias for resizeBlob
-const resized2 = await qp.resizeFile(file, 1200, 800);
+const resized5 = await qp.resizeFile(file, 1200, null);
 ```
 
 ### Create Thumbnails

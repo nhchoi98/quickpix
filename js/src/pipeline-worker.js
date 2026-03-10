@@ -40,6 +40,7 @@ function parseResizeFilter(value) {
   if (f === "nearest") return "nearest";
   if (f === "box") return "box";
   if (f === "hamming") return "hamming";
+  if (f === "lanczos2") return "lanczos2";
   if (f === "lanczos" || f === "lanczos3") return "lanczos";
   return "bilinear";
 }
@@ -48,6 +49,7 @@ function toFilterCode(filter) {
   if (filter === "nearest") return 0;
   if (filter === "box") return 2;
   if (filter === "hamming") return 3;
+  if (filter === "lanczos2") return 5;
   if (filter === "lanczos") return 4;
   return 1;
 }

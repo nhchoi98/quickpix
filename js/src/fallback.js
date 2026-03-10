@@ -3,6 +3,7 @@ const FILTERS = {
   bilinear: 1,
   box: 2,
   hamming: 3,
+  lanczos2: 5,
   lanczos: 4,
 };
 
@@ -12,6 +13,7 @@ const SUPPORT = {
   bilinear: 1,
   box: 0.5,
   hamming: 2,
+  lanczos2: 2,
   lanczos: 3,
 };
 
@@ -26,6 +28,7 @@ function normalizeFilter(filter) {
   if (FILTERS[raw] === 1) return "bilinear";
   if (FILTERS[raw] === 2) return "box";
   if (FILTERS[raw] === 3) return "hamming";
+  if (FILTERS[raw] === 5) return "lanczos2";
   if (FILTERS[raw] === 4) return "lanczos";
 
   if (raw === "lanczos3") return "lanczos";
@@ -65,6 +68,13 @@ function filterKernel(filter, distance) {
       return 0;
     }
     return sinc(distance) * (0.54 + 0.46 * Math.cos((PI * distance) * 0.5));
+  }
+
+  if (filter === "lanczos2") {
+    if (x >= 2) {
+      return 0;
+    }
+    return sinc(distance) * sinc(distance / 2);
   }
 
   if (filter === "lanczos") {
@@ -505,6 +515,7 @@ export const FILTER_NAMES = {
   bilinear: "bilinear",
   box: "box",
   hamming: "hamming",
+  lanczos2: "lanczos2",
   lanczos: "lanczos",
 };
 

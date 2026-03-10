@@ -1,6 +1,6 @@
 // ── Core types ──────────────────────────────────────────────────────────
 
-export type ResizeFilter = "nearest" | "bilinear" | "box" | "hamming" | "lanczos";
+export type ResizeFilter = "nearest" | "bilinear" | "box" | "hamming" | "lanczos2" | "lanczos";
 
 export type FitMode = "contain" | "cover" | "fill";
 
@@ -79,6 +79,7 @@ export interface QuickPixEasyOptions {
 export interface EasyResizeOptions {
   filter?: ResizeFilter;
   fit?: FitMode;
+  maxDimension?: number;
   outputMimeType?: ImageMimeType;
   outputQuality?: number;
   preserveMetadata?: boolean;
@@ -94,8 +95,8 @@ export interface BatchItem {
 
 export class QuickPixEasy {
   constructor(options?: QuickPixEasyOptions);
-  resizeBlob(blob: Blob, width: number, height: number, options?: EasyResizeOptions): Promise<Blob>;
-  resizeFile(file: File, width: number, height: number, options?: EasyResizeOptions): Promise<Blob>;
+  resizeBlob(blob: Blob, width: number | null, height: number | null, options?: EasyResizeOptions): Promise<Blob>;
+  resizeFile(file: File, width: number | null, height: number | null, options?: EasyResizeOptions): Promise<Blob>;
   createThumbnail(
     source: Blob | File | ImageData | HTMLCanvasElement | HTMLImageElement,
     maxDimension: number,
