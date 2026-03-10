@@ -12,8 +12,68 @@ import { computeTargetSize, normalizeSource, getImageSize } from "./utils.js";
 import { readOrientation, extractSegments, injectSegments, orientationTransform } from "./metadata.js";
 import { WorkerPool } from "./worker-pool.js";
 import { resizeFromContext } from "./chunked-resize.js";
+import { normalizeWorkerSources, resolveWorkerURLs, warnMainThreadFallback } from "./worker-utils.js";
 
-const PIPELINE_WORKER_URL = new URL("./pipeline-worker.js", import.meta.url).toString();
+let _defaultWorkerURL;
+const DEFAULT_PIPELINE_WORKER_CANDIDATES = [
+  "./pipeline-worker.js?worker&module",
+  "./pipeline-worker.js?worker",
+  "./pipeline-worker.js?url",
+  "./pipeline-worker.js?module",
+  "./pipeline-worker.js",
+];
+
+function getDefaultWorkerURL() {
+  if (_defaultWorkerURL === undefined) {
+    _defaultWorkerURL = resolveWorkerURLs(DEFAULT_PIPELINE_WORKER_CANDIDATES, import.meta.url);
+  }
+  return _defaultWorkerURL;
+}
+
+let _defaultWasmPath;
+function getDefaultWasmPath() {
+  if (_defaultWasmPath === undefined) {
+    try {
+      _defaultWasmPath = new URL("./wasm/quickpix_wasm.js", import.meta.url).toString();
+    } catch {
+      _defaultWasmPath = null;
+    }
+  }
+  return _defaultWasmPath;
+}
+
+function getWorkerSources(input) {
+  return normalizeWorkerSources(input, getDefaultWorkerURL());
+}
+
+function createWorkerFactory(sources) {
+  const sourceList = sources.length ? sources : [];
+  return async () => {
+    let lastError = null;
+
+    for (const source of sourceList) {
+      try {
+        if (typeof source === "function") {
+          const worker = await Promise.resolve(source());
+          if (
+            !worker ||
+            typeof worker.addEventListener !== "function" ||
+            typeof worker.postMessage !== "function"
+          ) {
+            throw new Error("invalid worker instance");
+          }
+          return worker;
+        }
+
+        return new Worker(source, { type: "module" });
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("Worker creation failed");
+  };
+}
 
 /**
  * Detect the best execution level for this environment.
@@ -49,6 +109,9 @@ export class QuickPixEasy {
    * @param {boolean} [options.useWasm=true]
    * @param {boolean} [options.preserveMetadata=false]
    * @param {boolean} [options.autoRotate=true]
+   * @param {string|URL|Function|Array<string|URL|Function>} [options.workerURL]  - Override pipeline worker URL (for bundlers)
+   * @param {boolean} [options.requireWorker=false] - Throw when worker pipeline cannot be created
+   * @param {string} [options.wasmPath]   - Override WASM module path (for bundlers)
    */
   constructor(options = {}) {
     this._filter = options.filter || "bilinear";
@@ -59,12 +122,21 @@ export class QuickPixEasy {
     this._autoRotate = options.autoRotate !== false;
     this._maxWorkers = options.maxWorkers || 0;
     this._idleTimeout = options.idleTimeout ?? 30000;
+    this._workerURL = options.workerURL || null;
+    this._wasmPath = options.wasmPath || null;
+    this._requireWorker = options.requireWorker || false;
+    this._workerSources = getWorkerSources(this._workerURL);
 
     this._level = detectLevel();
     this._pool = null;
     this._engine = new QuickPix({
       useWasm: this._useWasm,
       filter: this._filter,
+      wasmPath: this._wasmPath || undefined,
+      requireWorker: this._requireWorker,
+      concurrency: this._requireWorker
+        ? (typeof this._maxWorkers === "number" && this._maxWorkers > 0 ? this._maxWorkers : 2)
+        : 1,
     });
     this._destroyed = false;
   }
@@ -72,10 +144,22 @@ export class QuickPixEasy {
   /** @private */
   _getPool() {
     if (this._pool) return this._pool;
-    if (this._level < 1) return null;
+    if (this._level < 1) {
+      if (this._requireWorker) {
+        throw new Error("QuickPixEasy requires a worker environment for the pipeline mode");
+      }
+      return null;
+    }
+
+    if (!this._workerSources.length) {
+      if (this._requireWorker) {
+        throw new Error("QuickPixEasy requires pipeline worker URL, but none is available");
+      }
+      return null;
+    }
 
     this._pool = new WorkerPool({
-      workerScript: PIPELINE_WORKER_URL,
+      workerFactory: createWorkerFactory(this._workerSources),
       maxWorkers: this._maxWorkers || undefined,
       idleTimeout: this._idleTimeout,
     });
@@ -138,9 +222,23 @@ export class QuickPixEasy {
           preserveMetadata,
           autoRotate,
         });
-      } catch {
+      } catch (error) {
+        if (this._requireWorker) {
+          throw error;
+        }
+        warnMainThreadFallback("QuickPixEasy: pipeline worker failed, fallback to main-thread resize", error);
         // fall through to main thread path
       }
+    }
+
+    if (this._level < 1) {
+      warnMainThreadFallback(
+        "QuickPixEasy: worker pipeline environment is unavailable, fallback to main-thread resize."
+      );
+    }
+
+    if (this._requireWorker) {
+      throw new Error("QuickPixEasy requires pipeline worker execution, but worker mode is unavailable");
     }
 
     // Level 2 & 3: Main thread decode/encode
@@ -242,9 +340,23 @@ export class QuickPixEasy {
     if (this._level === 1) {
       try {
         return await this._batchPipeline(items, options);
-      } catch {
+      } catch (error) {
+        if (this._requireWorker) {
+          throw error;
+        }
+        warnMainThreadFallback("QuickPixEasy: batch pipeline worker failed, fallback to main-thread batch resize", error);
         // fall through
       }
+    }
+
+    if (this._level < 1) {
+      warnMainThreadFallback(
+        "QuickPixEasy: worker pipeline environment is unavailable, fallback to main-thread batch resize."
+      );
+    }
+
+    if (this._requireWorker) {
+      throw new Error("QuickPixEasy requires pipeline worker execution, but worker mode is unavailable");
     }
 
     // Sequential fallback
@@ -282,6 +394,9 @@ export class QuickPixEasy {
   /** @private */
   async _runPipeline(blob, width, height, opts) {
     const pool = this._getPool();
+    if (!pool) {
+      throw new Error("Pipeline worker pool is unavailable");
+    }
     const result = await pool.run({
       type: "pipeline",
       blob,
@@ -291,7 +406,7 @@ export class QuickPixEasy {
       outputMimeType: opts.outputMimeType,
       outputQuality: opts.outputQuality,
       useWasm: this._useWasm,
-      wasmPath: new URL("./wasm/quickpix_wasm.js", import.meta.url).toString(),
+      wasmPath: this._wasmPath || getDefaultWasmPath() || "",
       preserveMetadata: opts.preserveMetadata,
       autoRotate: opts.autoRotate,
     });
@@ -301,12 +416,15 @@ export class QuickPixEasy {
   /** @private */
   async _batchPipeline(items, options) {
     const pool = this._getPool();
+    if (!pool) {
+      throw new Error("Pipeline worker pool is unavailable");
+    }
     const filter = options.filter || this._filter;
     const mimeType = options.outputMimeType || this._outputMimeType;
     const quality = options.outputQuality ?? this._outputQuality;
     const preserveMetadata = options.preserveMetadata ?? this._preserveMetadata;
     const autoRotate = options.autoRotate ?? this._autoRotate;
-    const wasmPath = new URL("./wasm/quickpix_wasm.js", import.meta.url).toString();
+    const wasmPath = this._wasmPath || getDefaultWasmPath() || "";
 
     const tasks = await Promise.all(
       items.map(async (item) => {

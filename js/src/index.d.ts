@@ -15,6 +15,8 @@ export interface QuickPixOptions {
   tileSize?: number;
   filter?: ResizeFilter;
   concurrency?: number;
+  workerURL?: string | URL | (() => Worker | Promise<Worker>) | Array<string | URL | (() => Worker | Promise<Worker>)>;
+  requireWorker?: boolean;
 }
 
 export interface ResizeOptions {
@@ -74,6 +76,9 @@ export interface QuickPixEasyOptions {
   useWasm?: boolean;
   preserveMetadata?: boolean;
   autoRotate?: boolean;
+  workerURL?: string | URL | (() => Worker | Promise<Worker>) | Array<string | URL | (() => Worker | Promise<Worker>)>;
+  requireWorker?: boolean;
+  wasmPath?: string;
 }
 
 export interface EasyResizeOptions {

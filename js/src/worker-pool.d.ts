@@ -1,5 +1,6 @@
 export interface WorkerPoolOptions {
-  workerScript: string | URL;
+  workerScript?: string | URL;
+  workerFactory?: () => Worker | Promise<Worker>;
   maxWorkers?: number;
   idleTimeout?: number;
   initPayload?: Record<string, unknown>;

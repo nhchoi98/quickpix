@@ -8,13 +8,18 @@ const DEFAULT_IDLE_TIMEOUT = 30000;
 export class WorkerPool {
   /**
    * @param {object} options
-   * @param {string|URL} options.workerScript - URL to the worker script
+   * @param {string|URL} [options.workerScript] - URL to the worker script
+   * @param {Function} [options.workerFactory] - Async function that returns a Worker instance
    * @param {number} [options.maxWorkers]     - Max concurrent workers
    * @param {number} [options.idleTimeout]    - Auto-terminate idle workers (ms)
    * @param {object} [options.initPayload]    - Payload sent to each worker on init
    */
   constructor(options) {
     this._script = options.workerScript;
+    this._workerFactory = options.workerFactory;
+    if (!this._workerFactory && !this._script) {
+      throw new Error("WorkerPool requires workerScript or workerFactory");
+    }
     this._maxWorkers =
       options.maxWorkers ||
       (typeof navigator !== "undefined" && navigator.hardwareConcurrency) ||
@@ -139,7 +144,15 @@ export class WorkerPool {
 
   /** @private */
   async _createWorker() {
-    const worker = new Worker(this._script, { type: "module" });
+    let worker;
+    if (typeof this._workerFactory === "function") {
+      worker = await this._workerFactory();
+    } else {
+      worker = new Worker(this._script, { type: "module" });
+    }
+    if (!worker || typeof worker.addEventListener !== "function" || typeof worker.postMessage !== "function") {
+      throw new Error("workerFactory must return a Worker instance");
+    }
     const id = (this._totalCreated += 1);
 
     if (this._initPayload) {

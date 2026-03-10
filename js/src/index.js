@@ -1,8 +1,27 @@
 import { loadWasmModule } from "./wasm-loader.js";
 import { resizeBufferFallback } from "./fallback.js";
+import { normalizeWorkerSources, resolveWorkerURLs, warnMainThreadFallback } from "./worker-utils.js";
 
 const DEFAULT_WASM_PATH = new URL("./wasm/quickpix_wasm.js", import.meta.url).toString();
-const WORKER_SCRIPT_URL = new URL("./resize-worker.js", import.meta.url).toString();
+
+const DEFAULT_RESIZE_WORKER_CANDIDATES = [
+  "./resize-worker.js?worker&module",
+  "./resize-worker.js?worker",
+  "./resize-worker.js?url",
+  "./resize-worker.js?module",
+  "./resize-worker.js",
+];
+
+let _defaultWorkerScriptURLs;
+function getDefaultWorkerScriptURLs() {
+  if (_defaultWorkerScriptURLs !== undefined) {
+    return _defaultWorkerScriptURLs;
+  }
+
+  const urls = resolveWorkerURLs(DEFAULT_RESIZE_WORKER_CANDIDATES, import.meta.url);
+  _defaultWorkerScriptURLs = urls;
+  return urls;
+}
 
 function normalizeOptions(input) {
   const options = Object.assign(
@@ -121,6 +140,8 @@ export class QuickPix {
     const normalized = normalizeOptions(options);
     this._options = normalized;
     this._wasmPath = normalized.wasmPath || DEFAULT_WASM_PATH;
+    this._workerSources = normalizeWorkerSources(normalized.workerURL, getDefaultWorkerScriptURLs());
+    this._requireWorker = normalized.requireWorker || false;
     this._loadError = null;
     this._wasm = null;
     this._stats = {
@@ -152,45 +173,75 @@ export class QuickPix {
   }
 
   async _createWorker(initPayload) {
-    const worker = new Worker(WORKER_SCRIPT_URL, { type: "module" });
     const id = this._workerId += 1;
+    let lastError = null;
 
-    return new Promise((resolve, reject) => {
-      let settled = false;
+    for (const source of this._workerSources) {
+      let worker = null;
 
-      const done = (payload) => {
-        if (settled) return;
-        settled = true;
-        worker.removeEventListener("message", onMessage);
-        worker.removeEventListener("error", onError);
-
-        if (payload && payload.ok) {
-          resolve({ id, worker });
-        } else if (payload && payload.error) {
-          reject(new Error(payload.error));
+      try {
+        if (typeof source === "function") {
+          worker = await Promise.resolve(source());
         } else {
-          reject(new Error("worker init failed"));
+          worker = new Worker(source, { type: "module" });
         }
-      };
 
-      const onMessage = (event) => {
-        const msg = event.data || {};
-        if (msg.type !== "ready") return;
-        done(msg);
-      };
+        if (!worker || typeof worker.addEventListener !== "function" || typeof worker.postMessage !== "function") {
+          throw new TypeError("Invalid worker instance");
+        }
+      } catch (error) {
+        lastError = error;
+        continue;
+      }
 
-      const onError = (event) => {
-        done({ error: String(event && (event.message || event.error) || "worker initialization failed") });
-      };
+      try {
+        const ready = await new Promise((resolve, reject) => {
+          let settled = false;
 
-      worker.addEventListener("message", onMessage);
-      worker.addEventListener("error", onError);
-      worker.postMessage({
-        type: "init",
-        id,
-        payload: initPayload,
-      });
-    });
+          const done = (payload) => {
+            if (settled) return;
+            settled = true;
+            worker.removeEventListener("message", onMessage);
+            worker.removeEventListener("error", onError);
+
+            if (payload && payload.ok) {
+              resolve(payload);
+            } else if (payload && payload.error) {
+              reject(new Error(payload.error));
+            } else {
+              reject(new Error("worker init failed"));
+            }
+          };
+
+          const onMessage = (event) => {
+            const msg = event.data || {};
+            if (msg.type !== "ready") return;
+            done(msg);
+          };
+
+          const onError = (event) => {
+            done({ error: String(event && (event.message || event.error) || "worker initialization failed") });
+          };
+
+          worker.addEventListener("message", onMessage);
+          worker.addEventListener("error", onError);
+          worker.postMessage({
+            type: "init",
+            id,
+            payload: initPayload,
+          });
+        });
+
+        if (ready && ready.ok) {
+          return { id, worker };
+        }
+      } catch (error) {
+        lastError = error;
+        worker.terminate();
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("worker init failed");
   }
 
   async _runWorkerTask(worker, task) {
@@ -236,11 +287,24 @@ export class QuickPix {
 
   async _resizeWithWorkers(src, srcWidth, srcHeight, dstWidth, dstHeight, options) {
     if (!hasWorkerSupport()) {
+      if (this._requireWorker) {
+        throw new Error("Worker support is not available");
+      }
+      return this._runFallback(src, srcWidth, srcHeight, dstWidth, dstHeight, options);
+    }
+
+    if (!this._workerSources.length) {
+      if (this._requireWorker) {
+        throw new Error("Worker script is not available");
+      }
       return this._runFallback(src, srcWidth, srcHeight, dstWidth, dstHeight, options);
     }
 
     const workerCount = resolveWorkersToUse(options.concurrency, dstHeight);
     if (workerCount <= 1) {
+      if (this._requireWorker) {
+        throw new Error("Worker mode is required but concurrency is 1");
+      }
       return this._runFallback(src, srcWidth, srcHeight, dstWidth, dstHeight, options);
     }
 
@@ -381,6 +445,10 @@ export class QuickPix {
     const merged = mergeOption(this._options, options);
     this._stats.calls += 1;
 
+    if (this._requireWorker && merged.concurrency < 2) {
+      throw new Error("QuickPix requireWorker=true needs concurrency >= 2");
+    }
+
     if (merged.concurrency > 1) {
       try {
         const workerResult = await this._resizeWithWorkers(
@@ -403,7 +471,15 @@ export class QuickPix {
           width: workerResult.width,
           height: workerResult.height,
         };
-      } catch {
+      } catch (error) {
+        if (this._requireWorker) {
+          throw error;
+        }
+
+        warnMainThreadFallback(
+          `Worker mode unavailable; fallback to main-thread resize for ${srcWidth}x${srcHeight} -> ${dstWidth}x${dstHeight}`,
+          error,
+        );
         // fall through to direct path
       }
     }

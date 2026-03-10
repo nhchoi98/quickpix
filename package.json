@@ -34,6 +34,18 @@
     },
     "./fallback": {
       "import": "./js/src/fallback.js"
+    },
+    "./resize-worker": {
+      "import": "./js/src/resize-worker.js"
+    },
+    "./pipeline-worker": {
+      "import": "./js/src/pipeline-worker.js"
+    },
+    "./resize-worker.js": {
+      "import": "./js/src/resize-worker.js"
+    },
+    "./pipeline-worker.js": {
+      "import": "./js/src/pipeline-worker.js"
     }
   },
   "files": [
@@ -49,6 +61,7 @@
     "js/src/encode.d.ts",
     "js/src/utils.js",
     "js/src/utils.d.ts",
+    "js/src/worker-utils.js",
     "js/src/metadata.js",
     "js/src/metadata.d.ts",
     "js/src/wasm-loader.js",

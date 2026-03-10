@@ -152,6 +152,9 @@ qp.destroy(); // 워커 풀 종료 및 리소스 해제
 | `useWasm` | `true` | WASM 가속 사용 여부 |
 | `preserveMetadata` | `false` | EXIF/ICC/IPTC 메타데이터 보존 |
 | `autoRotate` | `true` | EXIF Orientation 자동 보정 |
+| `workerURL` | `null` | 워커 URL(번들러 `?worker` 경로 fallback) |
+| `requireWorker` | `false` | `true`면 워커 실행 불가 시 메인 스레드 폴백 없이 예외를 던짐 |
+| `wasmPath` | `null` | WASM 모듈 경로 오버라이드 |
 
 ---
 
@@ -173,6 +176,167 @@ const out = await qp.resizeBuffer(src, 640, 480, 320, 240, {
 });
 
 console.log(out.width, out.height, out.data.length); // 320 240 307200
+```
+
+### 번들러별 워커 설정 (Next, Vite, Rollup, esbuild, webpack, Turbopack)
+
+번들러가 워커 경로를 기본으로 처리하지 못하면 `workerURL`을 명시하세요.  
+메인 스레드 폴백을 막으려면 `requireWorker: true`를 사용합니다.
+
+```js
+import { QuickPix, QuickPixEasy } from "quickpix";
+import resizeWorker from "quickpix/resize-worker.js?url";
+import pipelineWorker from "quickpix/pipeline-worker.js?url";
+
+const qp = new QuickPix({
+  workerURL: resizeWorker,
+  requireWorker: true,
+});
+
+const qpe = new QuickPixEasy({
+  workerURL: pipelineWorker,
+  requireWorker: true,
+});
+```
+
+Vite/webpack/Turbopack에서는 확장자 없는 경로도 가능합니다.
+
+```js
+import resizeWorker from "quickpix/resize-worker?url";
+import pipelineWorker from "quickpix/pipeline-worker?url";
+```
+
+Rollup는 `?url` 사용 시 `@rollup/plugin-url`이 필요합니다.  
+플러그인을 못 쓰는 환경에서는 `quickpix/resize-worker.js`처럼 순수 경로로도 시도합니다.
+
+```js
+import resizeWorker from "quickpix/resize-worker.js";
+import pipelineWorker from "quickpix/pipeline-worker.js";
+```
+
+또는 워커 팩토리 함수를 넘겨도 됩니다.
+
+```js
+import resizeWorkerURL from "quickpix/resize-worker.js?url";
+
+const qp = new QuickPix({
+  workerURL: [() => new Worker(resizeWorkerURL, { type: "module" })],
+  requireWorker: true,
+});
+```
+
+`requireWorker: true`는 image-blob-reduce처럼 워커가 안 뜨면 즉시 예외를 던져 메인 스레드로 처리하지 않습니다.
+
+템플릿 모음: [examples/bundlers](/Users/ncai_nak/Desktop/Repository/pica_rust/examples/bundlers)
+
+### 번들러별 안정 동작 조합
+
+아래 예시는 `requireWorker: true` 기준이고, 실제 프로젝트 환경에서 하나씩 선택해 적용하면 됩니다.
+
+**1) Next.js (webpack / Turbopack)**
+
+```js
+import { QuickPix, QuickPixEasy } from "quickpix";
+import resizeWorker from "quickpix/resize-worker.js?url";
+import pipelineWorker from "quickpix/pipeline-worker.js?url";
+
+const qp = new QuickPix({ workerURL: resizeWorker, requireWorker: true });
+const qpe = new QuickPixEasy({ workerURL: pipelineWorker, requireWorker: true });
+```
+
+기본 URL 주입이 안 맞는 경우:
+
+```js
+import { QuickPix } from "quickpix";
+
+const qp = new QuickPix({
+  workerURL: [() => import("quickpix/resize-worker.js?url").then((m) => new Worker(m.default, { type: "module" }))],
+  requireWorker: true,
+});
+```
+
+**2) Vite**
+
+```js
+import { QuickPix, QuickPixEasy } from "quickpix";
+import resizeWorker from "quickpix/resize-worker.js?worker";
+import pipelineWorker from "quickpix/pipeline-worker.js?worker";
+
+const qp = new QuickPix({ workerURL: resizeWorker, requireWorker: true });
+const qpe = new QuickPixEasy({ workerURL: pipelineWorker, requireWorker: true });
+```
+
+`?worker`가 동작하지 않으면 `?url`로 바꿔 사용합니다.
+
+**3) Rollup**
+
+```js
+// rollup.config.js
+import url from "@rollup/plugin-url";
+
+export default {
+  plugins: [
+    url({
+      include: [
+        /node_modules\/quickpix\/.*(resize-worker|pipeline-worker)\.js$/,
+      ],
+      limit: 0,
+      emitFiles: true,
+      fileName: "[name][extname]",
+    }),
+  ],
+};
+```
+
+```js
+import { QuickPix, QuickPixEasy } from "quickpix";
+import resizeWorker from "quickpix/resize-worker.js";
+import pipelineWorker from "quickpix/pipeline-worker.js";
+
+const qp = new QuickPix({ workerURL: resizeWorker, requireWorker: true });
+const qpe = new QuickPixEasy({ workerURL: pipelineWorker, requireWorker: true });
+```
+
+**4) esbuild**
+
+```js
+// esbuild CLI
+// 작업 환경이 다르다면 worker 파일만 file-loader처럼 취급해서 URL로 배출되게 조정합니다.
+esbuild src/index.js --bundle --platform=browser --outdir=dist --loader:.js=file
+```
+
+```js
+import { QuickPix, QuickPixEasy } from "quickpix";
+import resizeWorker from "quickpix/resize-worker.js?url";
+import pipelineWorker from "quickpix/pipeline-worker.js?url";
+
+const qp = new QuickPix({ workerURL: resizeWorker, requireWorker: true });
+const qpe = new QuickPixEasy({ workerURL: pipelineWorker, requireWorker: true });
+```
+
+**5) webpack**
+
+```js
+// webpack 5
+module.exports = {
+  module: {
+    rules: [
+      {
+        test: /quickpix\\/(.*)worker\\.js$/,
+        type: "asset/resource",
+      },
+    ],
+  },
+};
+```
+
+```js
+import { QuickPix, QuickPixEasy } from "quickpix";
+import resizeWorker from "quickpix/resize-worker.js?url";
+import pipelineWorker from "quickpix/pipeline-worker.js?url";
+
+const qp = new QuickPix({ workerURL: resizeWorker, requireWorker: true });
+const qpe = new QuickPixEasy({ workerURL: pipelineWorker, requireWorker: true });
 ```
 
 ### 지원 필터
