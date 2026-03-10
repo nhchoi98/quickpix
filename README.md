@@ -1,56 +1,57 @@
 # quickpix
 
-고성능 브라우저/Node.js 이미지 리사이즈 라이브러리.
-Rust/WASM SIMD 가속 + 순수 JS fallback. pica 대비 **2~5배 빠른** 리사이즈 성능.
+[한국어](./README.ko.md)
+
+High-performance image resize library for browsers and Node.js.
+Rust/WASM SIMD accelerated with pure JS fallback. **2–5x faster** than pica.
 
 ```bash
 npm install quickpix
 ```
 
-## 빠른 시작 — 고수준 API (`QuickPixEasy`)
+## Quick Start — High-Level API (`QuickPixEasy`)
 
-대부분의 사용 사례에서는 `QuickPixEasy`만으로 충분합니다.
-Blob/File 입력 → 리사이즈 → Blob 출력을 한 번의 호출로 처리합니다.
+For most use cases, `QuickPixEasy` is all you need.
+Blob/File in → resize → Blob out, in a single call.
 
 ```js
 import { QuickPixEasy } from "quickpix";
 
 const qp = new QuickPixEasy({
-  filter: "lanczos",           // 리사이즈 필터 (기본: bilinear)
+  filter: "lanczos",           // resize filter (default: bilinear)
   outputMimeType: "image/jpeg",
   outputQuality: 0.85,
-  preserveMetadata: true,      // EXIF/ICC/IPTC 메타데이터 보존
-  autoRotate: true,            // EXIF Orientation 자동 보정 (기본: true)
+  preserveMetadata: true,      // preserve EXIF/ICC/IPTC metadata
+  autoRotate: true,            // auto-correct EXIF orientation (default: true)
 });
 ```
 
-### Blob/File 리사이즈
+### Resize Blob/File
 
 ```js
-// 파일 input에서 받은 이미지를 리사이즈
 const input = document.querySelector('input[type="file"]');
 const file = input.files[0];
 
+// Returns a Blob — use with URL.createObjectURL() or FormData
 const resized = await qp.resizeBlob(file, 1200, 800);
-// resized는 Blob — 바로 URL.createObjectURL() 또는 FormData에 사용 가능
 
-// resizeFile은 resizeBlob의 별칭
+// resizeFile is an alias for resizeBlob
 const resized2 = await qp.resizeFile(file, 1200, 800);
 ```
 
-### 썸네일 생성
+### Create Thumbnails
 
-종횡비를 자동으로 보존합니다. 긴 쪽이 `maxDimension` 이하가 됩니다.
+Automatically preserves aspect ratio. The longest side fits within `maxDimension`.
 
 ```js
-// 6000x4000 이미지 → 200x133 썸네일
+// 6000x4000 image → 200x133 thumbnail
 const thumbnail = await qp.createThumbnail(file, 200);
 
-// Canvas, ImageData, HTMLImageElement도 입력 가능
+// Also accepts Canvas, ImageData, HTMLImageElement
 const thumb2 = await qp.createThumbnail(canvasElement, 150);
 ```
 
-### Canvas에 직접 출력
+### Draw to Canvas
 
 ```js
 const canvas = document.getElementById("preview");
@@ -58,13 +59,12 @@ canvas.width = 800;
 canvas.height = 600;
 
 await qp.resizeToCanvas(file, canvas, { filter: "lanczos" });
-// canvas에 리사이즈된 이미지가 그려짐
 ```
 
-### 배치 병렬 처리
+### Batch Parallel Processing
 
-여러 이미지를 Web Worker 풀에서 동시에 처리합니다.
-각 이미지가 별도 워커에서 decode→resize→encode 전체 파이프라인을 수행합니다.
+Processes multiple images concurrently using a Web Worker pool.
+Each image runs the full decode→resize→encode pipeline in a separate worker.
 
 ```js
 const results = await qp.batchResize([
@@ -75,84 +75,81 @@ const results = await qp.batchResize([
 // results = [Blob, Blob, Blob]
 ```
 
-### 메타데이터 보존
+### Metadata Preservation
 
-기본적으로 Canvas API를 거치면 EXIF, ICC 프로필 등 메타데이터가 모두 제거됩니다.
-`preserveMetadata: true`로 설정하면 원본 JPEG의 메타데이터를 결과에 재삽입합니다.
+By default, Canvas API strips all EXIF, ICC profiles, and other metadata.
+Set `preserveMetadata: true` to re-inject the original JPEG metadata into the output.
 
 ```js
-// 메타데이터 보존 (EXIF 촬영일, GPS, 카메라 정보, ICC 색상 프로필 등)
+// Preserve metadata (EXIF date, GPS, camera info, ICC color profile, etc.)
 const withMeta = await qp.resizeBlob(photo, 1200, 800, {
   preserveMetadata: true,
   outputMimeType: "image/jpeg",
 });
 
-// 메타데이터 제거 (기본값 — 개인정보 보호에 유리)
+// Strip metadata (default — better for privacy)
 const stripped = await qp.resizeBlob(photo, 1200, 800, {
   preserveMetadata: false,
 });
 ```
 
-### EXIF Orientation 자동 보정
+### EXIF Orientation Auto-Correction
 
-스마트폰 사진은 EXIF에 회전 정보를 저장합니다.
-`autoRotate: true`(기본값)이면 자동으로 올바른 방향으로 보정합니다.
+Smartphone photos store rotation info in EXIF.
+With `autoRotate: true` (default), images are automatically corrected to the right orientation.
 
 ```js
-// autoRotate: true (기본값) — 세로 촬영 사진이 올바르게 회전됨
+// autoRotate: true (default) — portrait photos display correctly
 const rotated = await qp.resizeBlob(phonePhoto, 800, 600);
 
-// autoRotate: false — 원본 픽셀 방향 그대로 (회전 안 함)
+// autoRotate: false — keep original pixel orientation
 const raw = await qp.resizeBlob(phonePhoto, 800, 600, { autoRotate: false });
 ```
 
-### Fit 모드
+### Fit Modes
 
 ```js
-// contain (기본): 800x600 안에 들어가도록 축소, 종횡비 보존
+// contain (default): fit within 800x600, preserve aspect ratio
 const a = await qp.resizeBlob(photo, 800, 600, { fit: "contain" });
 
-// cover: 800x600을 완전히 덮도록 확대, 종횡비 보존 (잘릴 수 있음)
+// cover: fill 800x600 completely, preserve aspect ratio (may crop)
 const b = await qp.resizeBlob(photo, 800, 600, { fit: "cover" });
 
-// fill: 정확히 800x600으로 변환, 종횡비 무시
+// fill: stretch to exactly 800x600, ignore aspect ratio
 const c = await qp.resizeBlob(photo, 800, 600, { fit: "fill" });
 ```
 
-### 리소스 정리
+### Cleanup
 
 ```js
-qp.destroy(); // 워커 풀 종료 및 리소스 해제
+qp.destroy(); // terminate worker pool and release resources
 ```
 
-### 전체 옵션 정리
+### Options Reference
 
-| 옵션 | 기본값 | 설명 |
+| Option | Default | Description |
 |---|---|---|
-| `filter` | `"bilinear"` | 리사이즈 필터 (`nearest`, `bilinear`, `box`, `hamming`, `lanczos`) |
-| `maxWorkers` | `navigator.hardwareConcurrency` | 워커 풀 최대 크기 |
-| `idleTimeout` | `30000` | 유휴 워커 자동 종료 (ms) |
-| `outputMimeType` | `"image/png"` | 출력 이미지 형식 |
-| `outputQuality` | `0.92` | JPEG/WebP 품질 (0~1) |
-| `useWasm` | `true` | WASM 가속 사용 여부 |
-| `preserveMetadata` | `false` | EXIF/ICC/IPTC 메타데이터 보존 |
-| `autoRotate` | `true` | EXIF Orientation 자동 보정 |
+| `filter` | `"bilinear"` | Resize filter (`nearest`, `bilinear`, `box`, `hamming`, `lanczos`) |
+| `maxWorkers` | `navigator.hardwareConcurrency` | Max worker pool size |
+| `idleTimeout` | `30000` | Auto-terminate idle workers (ms) |
+| `outputMimeType` | `"image/png"` | Output image format |
+| `outputQuality` | `0.92` | JPEG/WebP quality (0–1) |
+| `useWasm` | `true` | Enable WASM acceleration |
+| `preserveMetadata` | `false` | Preserve EXIF/ICC/IPTC metadata |
+| `autoRotate` | `true` | Auto-correct EXIF orientation |
 
 ---
 
-## 저수준 API (`QuickPix`)
+## Low-Level API (`QuickPix`)
 
-RGBA 버퍼를 직접 다루거나, 세밀한 제어가 필요할 때 사용합니다.
+For direct RGBA buffer manipulation or fine-grained control.
 
 ```js
 import { QuickPix } from "quickpix";
 
-const qp = new QuickPix({
-  useWasm: true,
-  filter: "lanczos",
-});
+const qp = new QuickPix({ useWasm: true, filter: "lanczos" });
 
-const src = new Uint8ClampedArray(640 * 480 * 4); // RGBA 버퍼
+const src = new Uint8ClampedArray(640 * 480 * 4);
 const out = await qp.resizeBuffer(src, 640, 480, 320, 240, {
   filter: "lanczos",
 });
@@ -160,101 +157,64 @@ const out = await qp.resizeBuffer(src, 640, 480, 320, 240, {
 console.log(out.width, out.height, out.data.length); // 320 240 307200
 ```
 
-### 지원 필터
+### Supported Filters
 
-| 필터 | 설명 | 속도 | 품질 |
+| Filter | Description | Speed | Quality |
 |---|---|---|---|
-| `nearest` | 최근접 픽셀 선택 | 가장 빠름 | 낮음 |
-| `bilinear` | 2x2 선형 보간 (기본값) | 빠름 | 중간 |
-| `box` | 박스 평균 | 보통 | 중간 |
-| `hamming` | 해밍 윈도우 | 느림 | 높음 |
-| `lanczos` | Lanczos3 sinc 기반 | 가장 느림 | 최고 |
-
-### Canvas/ImageData 리사이즈
-
-```js
-await qp.resize(sourceCanvas, targetCanvas, { filter: "bilinear" });
-```
-
-### 통계 확인
-
-```js
-const stats = qp.getStats();
-// { calls: 10, wasmHits: 8, fallbackHits: 2, lastError: null }
-```
+| `nearest` | Nearest neighbor | Fastest | Low |
+| `bilinear` | 2x2 linear interpolation (default) | Fast | Medium |
+| `box` | Box average | Medium | Medium |
+| `hamming` | Hamming window | Slow | High |
+| `lanczos` | Lanczos3 sinc-based | Slowest | Best |
 
 ---
 
-## 메타데이터 모듈
+## Metadata Module
 
-EXIF/ICC/IPTC를 직접 다뤄야 할 때 독립 모듈로 사용할 수 있습니다.
+Standalone module for direct EXIF/ICC/IPTC manipulation.
 
 ```js
 import { readOrientation, extractSegments, injectSegments } from "quickpix/metadata";
 
 const buffer = await file.arrayBuffer();
-
-// EXIF Orientation 읽기 (1~8)
 const orientation = readOrientation(buffer);
-
-// 메타데이터 세그먼트 추출
 const segments = extractSegments(buffer);
-// { exif: Uint8Array | null, icc: Uint8Array[], iptc: Uint8Array | null }
-
-// 리사이즈된 JPEG에 메타데이터 재삽입
 const restored = await injectSegments(resizedJpegBlob, segments);
 ```
 
 ---
 
-## 설치 및 빌드
+## Install & Build
 
 ```bash
 npm install quickpix
 
-# 개발 환경 (소스에서 빌드)
+# Development (build from source)
 npm install
-npm run build:wasm    # Rust → WASM 빌드 (wasm-pack 필요)
-npm run test:js       # JS 테스트 실행
-npm run test:rust     # Rust 테스트 실행
+npm run build:wasm    # Rust → WASM (requires wasm-pack)
+npm run test:js
+npm run test:rust
 ```
 
-## 벤치마크
+## Benchmarks
 
 ```bash
-npm run bench           # 성능 벤치마크
-npm run bench:compare   # pica 대비 비교
-npm run bench:memory    # 메모리 프로파일링
-npm run bench:native    # sharp(libvips) 대비 비교
-npm run bench:quality   # 품질 비교
+npm run bench           # performance
+npm run bench:compare   # vs pica
+npm run bench:memory    # memory profiling
+npm run bench:native    # vs sharp (libvips)
+npm run bench:quality   # quality comparison
 ```
 
-## 프로젝트 구조
+## Browser Compatibility
 
-```
-crates/core/       Rust RGBA 리사이즈 코어 (SIMD)
-crates/wasm/       wasm-bindgen 바인딩
-js/src/
-  index.js         QuickPix 저수준 엔진
-  easy.js          QuickPixEasy 고수준 API
-  fallback.js      순수 JS 리사이즈 (separable 2-pass)
-  metadata.js      EXIF/ICC/IPTC 파서
-  decode.js        Blob → RGBA 디코딩
-  encode.js        RGBA → Blob 인코딩
-  worker-pool.js   재사용 워커 풀
-  pipeline-worker.js  전체 파이프라인 워커
-bench/             벤치마크 스크립트
-```
-
-## 브라우저 호환성
-
-| 기능 | Chrome 69+ | Firefox 105+ | Safari 16.4+ |
+| Feature | Chrome 69+ | Firefox 105+ | Safari 16.4+ |
 |---|---|---|---|
-| 파이프라인 워커 (최적) | O | O | O |
-| JS fallback | 모든 브라우저 | 모든 브라우저 | 모든 브라우저 |
+| Pipeline worker (optimal) | Yes | Yes | Yes |
+| JS fallback | All browsers | All browsers | All browsers |
 
-`OffscreenCanvas` 미지원 환경에서는 자동으로 메인 스레드 경로로 전환됩니다.
+Automatically falls back to main-thread processing when `OffscreenCanvas` is unavailable.
 
-## 라이선스
+## License
 
 MIT
