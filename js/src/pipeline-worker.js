@@ -14,6 +14,7 @@
 import { resizeBufferFallback } from "./fallback.js";
 import { resizeFromContext } from "./chunked-resize.js";
 import { readOrientation, extractSegments, orientationTransform } from "./metadata.js";
+import { computeTargetSize } from "./utils.js";
 
 let wasmModule = null;
 let wasmLoadError = null;
@@ -61,8 +62,8 @@ async function handlePipeline(msg) {
   const {
     id,
     blob,
-    targetWidth,
-    targetHeight,
+    targetWidth: rawTargetW,
+    targetHeight: rawTargetH,
     filter = "bilinear",
     outputMimeType = "image/png",
     outputQuality = 0.92,
@@ -70,6 +71,8 @@ async function handlePipeline(msg) {
     wasmPath = "",
     preserveMetadata = false,
     autoRotate = true,
+    maxDimension = 0,
+    fit,
   } = msg;
 
   // 1. Extract metadata if needed
@@ -94,6 +97,38 @@ async function handlePipeline(msg) {
   const bitmap = await createImageBitmap(blob);
   let srcW = bitmap.width;
   let srcH = bitmap.height;
+
+  // 3. Compute target dimensions inside worker (avoids double decode on main thread)
+  let targetWidth = rawTargetW;
+  let targetHeight = rawTargetH;
+
+  if (maxDimension || !targetWidth || !targetHeight) {
+    // Use post-orientation dimensions for target size computation
+    let effectiveW = srcW;
+    let effectiveH = srcH;
+    if (autoRotate && orientation > 1) {
+      const t = orientationTransform(orientation, srcW, srcH);
+      effectiveW = t.width;
+      effectiveH = t.height;
+    }
+
+    if (maxDimension) {
+      const target = computeTargetSize(effectiveW, effectiveH, { maxDimension, fit });
+      targetWidth = target.width;
+      targetHeight = target.height;
+    } else if (!targetWidth && targetHeight) {
+      const target = computeTargetSize(effectiveW, effectiveH, { height: targetHeight, fit });
+      targetWidth = target.width;
+      targetHeight = target.height;
+    } else if (targetWidth && !targetHeight) {
+      const target = computeTargetSize(effectiveW, effectiveH, { width: targetWidth, fit });
+      targetWidth = target.width;
+      targetHeight = target.height;
+    } else {
+      targetWidth = effectiveW;
+      targetHeight = effectiveH;
+    }
+  }
 
   let canvas, ctx;
 

@@ -185,8 +185,37 @@ export class QuickPixEasy {
   async resizeBlob(blob, width, height, options = {}) {
     this._checkDestroyed();
 
-    // Auto-calculate missing dimension from aspect ratio
-    if (options.maxDimension || !width || !height) {
+    const filter = options.filter || this._filter;
+    const mimeType = options.outputMimeType || this._outputMimeType;
+    const quality = options.outputQuality ?? this._outputQuality;
+    const preserveMetadata = options.preserveMetadata ?? this._preserveMetadata;
+    const autoRotate = options.autoRotate ?? this._autoRotate;
+    const needsDimensionCalc = options.maxDimension || !width || !height;
+
+    // Level 1: Full pipeline in worker — delegate dimension computation to worker
+    // to avoid double decoding (getImageSize on main + createImageBitmap in worker)
+    if (this._level === 1) {
+      try {
+        return await this._runPipeline(blob, width, height, {
+          filter,
+          outputMimeType: mimeType,
+          outputQuality: quality,
+          preserveMetadata,
+          autoRotate,
+          maxDimension: options.maxDimension || 0,
+          fit: options.fit,
+        });
+      } catch (error) {
+        if (this._requireWorker) {
+          throw error;
+        }
+        warnMainThreadFallback("QuickPixEasy: pipeline worker failed, fallback to main-thread resize", error);
+        // fall through to main thread path
+      }
+    }
+
+    // Main thread fallback: compute dimensions here since no worker
+    if (needsDimensionCalc) {
       const size = await getImageSize(blob);
       if (options.maxDimension) {
         const target = computeTargetSize(size.width, size.height, { maxDimension: options.maxDimension });
@@ -203,31 +232,6 @@ export class QuickPixEasy {
       } else {
         width = size.width;
         height = size.height;
-      }
-    }
-
-    const filter = options.filter || this._filter;
-    const mimeType = options.outputMimeType || this._outputMimeType;
-    const quality = options.outputQuality ?? this._outputQuality;
-    const preserveMetadata = options.preserveMetadata ?? this._preserveMetadata;
-    const autoRotate = options.autoRotate ?? this._autoRotate;
-
-    // Level 1: Full pipeline in worker
-    if (this._level === 1) {
-      try {
-        return await this._runPipeline(blob, width, height, {
-          filter,
-          outputMimeType: mimeType,
-          outputQuality: quality,
-          preserveMetadata,
-          autoRotate,
-        });
-      } catch (error) {
-        if (this._requireWorker) {
-          throw error;
-        }
-        warnMainThreadFallback("QuickPixEasy: pipeline worker failed, fallback to main-thread resize", error);
-        // fall through to main thread path
       }
     }
 
@@ -277,10 +281,7 @@ export class QuickPixEasy {
     this._checkDestroyed();
 
     const blob = await normalizeSource(source);
-    const size = await getImageSize(blob);
-    const target = computeTargetSize(size.width, size.height, { maxDimension });
-
-    return this.resizeBlob(blob, target.width, target.height, options);
+    return this.resizeBlob(blob, null, null, { ...options, maxDimension });
   }
 
   /**
@@ -400,8 +401,8 @@ export class QuickPixEasy {
     const result = await pool.run({
       type: "pipeline",
       blob,
-      targetWidth: width,
-      targetHeight: height,
+      targetWidth: width || 0,
+      targetHeight: height || 0,
       filter: opts.filter,
       outputMimeType: opts.outputMimeType,
       outputQuality: opts.outputQuality,
@@ -409,6 +410,8 @@ export class QuickPixEasy {
       wasmPath: this._wasmPath || getDefaultWasmPath() || "",
       preserveMetadata: opts.preserveMetadata,
       autoRotate: opts.autoRotate,
+      maxDimension: opts.maxDimension || 0,
+      fit: opts.fit,
     });
     return result.blob;
   }
@@ -429,16 +432,13 @@ export class QuickPixEasy {
     const tasks = await Promise.all(
       items.map(async (item) => {
         const blob = await normalizeSource(item.source);
-        const size = await getImageSize(blob);
-        const target = item.maxDimension
-          ? computeTargetSize(size.width, size.height, { maxDimension: item.maxDimension })
-          : computeTargetSize(size.width, size.height, { width: item.width, height: item.height });
 
         return {
           type: "pipeline",
           blob,
-          targetWidth: target.width,
-          targetHeight: target.height,
+          targetWidth: item.width || 0,
+          targetHeight: item.height || 0,
+          maxDimension: item.maxDimension || 0,
           filter,
           outputMimeType: mimeType,
           outputQuality: quality,
