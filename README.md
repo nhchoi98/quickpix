@@ -150,7 +150,7 @@ qp.destroy(); // terminate worker pool and release resources
 | `useWasm` | `true` | Enable WASM acceleration |
 | `preserveMetadata` | `false` | Preserve EXIF/ICC/IPTC metadata |
 | `autoRotate` | `true` | Auto-correct EXIF orientation |
-| `workerURL` | `null` | Pipeline worker URL (or `data:` URL) for bundlers that do not rewrite worker paths |
+| `workerURL` | `null` | Optional override: worker URL or factory for environments that cannot resolve `import.meta.url` worker imports |
 | `requireWorker` | `false` | If `true`, throws when worker pipeline is unavailable instead of falling back to main thread |
 | `wasmPath` | `null` | Override WASM module URL |
 
@@ -175,169 +175,34 @@ console.log(out.width, out.height, out.data.length); // 320 240 307200
 
 ### Bundler-safe worker setup (Next, Vite, Rollup, esbuild, webpack, Turbopack)
 
-QuickPix resolves worker entry from multiple candidates by default, but for bundlers that do not rewrite worker URLs reliably, pass `workerURL` explicitly.
-If you need hard failure when worker mode is unavailable, set `requireWorker: true`.
-
-Example config templates: [examples/bundlers](/Users/ncai_nak/Desktop/Repository/pica_rust/examples/bundlers)
+`QuickPix` and `QuickPixEasy` now try worker imports from multiple internal candidate paths first, so most projects work without `workerURL`.
 
 ```js
 import { QuickPix, QuickPixEasy } from "quickpix";
-import resizeWorker from "quickpix/resize-worker.js?url";
-import pipelineWorker from "quickpix/pipeline-worker.js?url";
+
+const qp = new QuickPix();
+const qpe = new QuickPixEasy();
+```
+
+If your bundler still fails to locate workers, pass `workerURL` in manually and keep `requireWorker: true` for hard-fail behavior:
+
+```js
+import { QuickPix, QuickPixEasy } from "quickpix";
+import resizeWorkerURL from "quickpix/resize-worker.js?url";
+import pipelineWorkerURL from "quickpix/pipeline-worker.js?url";
 
 const qp = new QuickPix({
-  workerURL: resizeWorker,
+  workerURL: resizeWorkerURL,
   requireWorker: true,
 });
 
 const qpe = new QuickPixEasy({
-  workerURL: pipelineWorker,
+  workerURL: pipelineWorkerURL,
   requireWorker: true,
 });
 ```
 
-If your setup already handles worker modules, this also works:
-
-```js
-import resizeWorker from "quickpix/resize-worker?url";
-import pipelineWorker from "quickpix/pipeline-worker?url";
-```
-
-Rollup users can use either the `?url` form above (with `@rollup/plugin-url`) or the plain worker file path:
-
-```js
-import resizeWorker from "quickpix/resize-worker.js";
-import pipelineWorker from "quickpix/pipeline-worker.js";
-```
-
-You can also pass a function factory to return a Worker instance directly:
-
-```js
-import resizeWorkerURL from "quickpix/resize-worker.js?url";
-
-const qp = new QuickPix({
-  workerURL: [() => new Worker(resizeWorkerURL, { type: "module" })],
-  requireWorker: true,
-});
-```
-
-`requireWorker: true` gives behavior similar to image-blob-reduce: it throws when worker paths or runtime are unavailable instead of falling back to main-thread processing.
-
-### Stable workerURL combos by bundler
-
-Copy this section as a reference and choose one option per stack.
-
-**1) Next.js (webpack / Turbopack)**
-
-```js
-import { QuickPix, QuickPixEasy } from "quickpix";
-import resizeWorker from "quickpix/resize-worker.js?url";
-import pipelineWorker from "quickpix/pipeline-worker.js?url";
-
-const qp = new QuickPix({ workerURL: resizeWorker, requireWorker: true });
-const qpe = new QuickPixEasy({ workerURL: pipelineWorker, requireWorker: true });
-```
-
-Alternative (if path rewriting is odd in your setup):
-
-```js
-import { QuickPix } from "quickpix";
-
-const qp = new QuickPix({
-  workerURL: [() => import("quickpix/resize-worker.js?url").then((m) => new Worker(m.default, { type: "module" }))],
-  requireWorker: true,
-});
-```
-
-**2) Vite**
-
-```js
-import { QuickPix, QuickPixEasy } from "quickpix";
-import resizeWorker from "quickpix/resize-worker.js?worker";
-import pipelineWorker from "quickpix/pipeline-worker.js?worker";
-
-const qp = new QuickPix({ workerURL: resizeWorker, requireWorker: true });
-const qpe = new QuickPixEasy({ workerURL: pipelineWorker, requireWorker: true });
-```
-
-Fallback when `?worker` form is not enabled:
-
-```js
-import resizeWorker from "quickpix/resize-worker.js?url";
-import pipelineWorker from "quickpix/pipeline-worker.js?url";
-```
-
-**3) Rollup**
-
-```js
-// rollup.config.js
-import url from "@rollup/plugin-url";
-
-export default {
-  plugins: [
-    url({
-      include: [
-        /node_modules\/quickpix\/.*(resize-worker|pipeline-worker)\.js$/,
-      ],
-      limit: 0,
-      emitFiles: true,
-      fileName: "[name][extname]",
-    }),
-  ],
-};
-```
-
-```js
-import { QuickPix, QuickPixEasy } from "quickpix";
-import resizeWorker from "quickpix/resize-worker.js";
-import pipelineWorker from "quickpix/pipeline-worker.js";
-
-const qp = new QuickPix({ workerURL: resizeWorker, requireWorker: true });
-const qpe = new QuickPixEasy({ workerURL: pipelineWorker, requireWorker: true });
-```
-
-**4) esbuild**
-
-```js
-// esbuild CLI
-// Use explicit URL-form import in source. If needed, force worker scripts to file-url output.
-esbuild src/index.js --bundle --platform=browser --outdir=dist \
-  --loader:.js=file
-```
-
-```js
-import { QuickPix, QuickPixEasy } from "quickpix";
-import resizeWorker from "quickpix/resize-worker.js?url";
-import pipelineWorker from "quickpix/pipeline-worker.js?url";
-
-const qp = new QuickPix({ workerURL: resizeWorker, requireWorker: true });
-const qpe = new QuickPixEasy({ workerURL: pipelineWorker, requireWorker: true });
-```
-
-**5) webpack**
-
-```js
-// webpack 5 config (asset-module default)
-module.exports = {
-  module: {
-    rules: [
-      {
-        test: /quickpix\\/(.*)worker\\.js$/,
-        type: "asset/resource",
-      },
-    ],
-  },
-};
-```
-
-```js
-import { QuickPix, QuickPixEasy } from "quickpix";
-import resizeWorker from "quickpix/resize-worker.js?url";
-import pipelineWorker from "quickpix/pipeline-worker.js?url";
-
-const qp = new QuickPix({ workerURL: resizeWorker, requireWorker: true });
-const qpe = new QuickPixEasy({ workerURL: pipelineWorker, requireWorker: true });
-```
+Example bundler templates are in [examples/bundlers](/Users/ncai_nak/Desktop/Repository/pica_rust/examples/bundlers).
 
 ### Supported Filters
 

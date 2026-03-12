@@ -1,27 +1,11 @@
 import { loadWasmModule } from "./wasm-loader.js";
 import { resizeBufferFallback } from "./fallback.js";
-import { normalizeWorkerSources, resolveWorkerURLs, warnMainThreadFallback } from "./worker-utils.js";
+import { normalizeWorkerSources, warnMainThreadFallback } from "./worker-utils.js";
+import { DEFAULT_RESIZE_WORKER_FACTORIES } from "./worker-sources.js";
 
 const DEFAULT_WASM_PATH = new URL("./wasm/quickpix_wasm.js", import.meta.url).toString();
 
-const DEFAULT_RESIZE_WORKER_CANDIDATES = [
-  "./resize-worker.js?worker&module",
-  "./resize-worker.js?worker",
-  "./resize-worker.js?url",
-  "./resize-worker.js?module",
-  "./resize-worker.js",
-];
-
-let _defaultWorkerScriptURLs;
-function getDefaultWorkerScriptURLs() {
-  if (_defaultWorkerScriptURLs !== undefined) {
-    return _defaultWorkerScriptURLs;
-  }
-
-  const urls = resolveWorkerURLs(DEFAULT_RESIZE_WORKER_CANDIDATES, import.meta.url);
-  _defaultWorkerScriptURLs = urls;
-  return urls;
-}
+const DEFAULT_RESIZE_WORKER_CANDIDATES = DEFAULT_RESIZE_WORKER_FACTORIES;
 
 function normalizeOptions(input) {
   const options = Object.assign(
@@ -140,7 +124,10 @@ export class QuickPix {
     const normalized = normalizeOptions(options);
     this._options = normalized;
     this._wasmPath = normalized.wasmPath || DEFAULT_WASM_PATH;
-    this._workerSources = normalizeWorkerSources(normalized.workerURL, getDefaultWorkerScriptURLs());
+    this._workerSources = normalizeWorkerSources(
+      normalized.workerURL,
+      DEFAULT_RESIZE_WORKER_CANDIDATES
+    );
     this._requireWorker = normalized.requireWorker || false;
     this._loadError = null;
     this._wasm = null;

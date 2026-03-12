@@ -62,6 +62,7 @@
     "js/src/utils.js",
     "js/src/utils.d.ts",
     "js/src/worker-utils.js",
+    "js/src/worker-sources.js",
     "js/src/metadata.js",
     "js/src/metadata.d.ts",
     "js/src/wasm-loader.js",

@@ -1,14 +1,12 @@
 import { QuickPix, QuickPixEasy } from "quickpix";
-import resizeWorker from "quickpix/resize-worker.js?url";
-import pipelineWorker from "quickpix/pipeline-worker.js?url";
 
 export const qp = new QuickPix({
-  workerURL: resizeWorker,
-  requireWorker: true,
+  // 기본 동작: quickpix가 번들러 환경에서 가능한 worker 소스를 자동 탐색
+  requireWorker: false,
 });
 
 export const qpe = new QuickPixEasy({
-  workerURL: pipelineWorker,
-  requireWorker: true,
+  // `requireWorker: true`로 바꾸면 실패 시 즉시 에러 처리
+  // (기본은 워커 실패 시 메인스레드 폴백)
+  requireWorker: false,
 });
-

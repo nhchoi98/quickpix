@@ -10,34 +10,48 @@ export function warnMainThreadFallback(message, detail) {
   }
 }
 
-export function resolveWorkerURLs(candidates, baseURL) {
-  const urls = [];
-  for (const candidate of candidates || []) {
-    try {
-      urls.push(new URL(candidate, baseURL).toString());
-    } catch {
-      // ignore
-    }
+function toWorkerSource(item) {
+  if (typeof item === "function") {
+    return item;
   }
-  return urls;
+  return item instanceof URL ? item.toString() : String(item);
+}
+
+function coerceWorkerSources(input) {
+  const values = Array.isArray(input) ? input : [input];
+  return values
+    .filter(Boolean)
+    .map(toWorkerSource)
+    .filter((value) => typeof value === "function" || typeof value === "string");
 }
 
 export function normalizeWorkerSources(input, defaultSources = []) {
-  if (!input) {
+  if (input === undefined || input === null) {
     return defaultSources.slice();
   }
 
-  const raw = Array.isArray(input) ? input : [input];
-  const out = [];
-
-  for (const item of raw) {
-    if (!item) continue;
-    if (typeof item === "function") {
-      out.push(item);
-      continue;
-    }
-    out.push(item instanceof URL ? item.toString() : String(item));
+  const sources = coerceWorkerSources(input);
+  if (!sources.length) {
+    return [];
   }
 
-  return Array.from(new Set(out));
+  const out = [];
+  const seen = new Set();
+
+  for (const item of sources) {
+    if (typeof item === "function") {
+      if (!seen.has(item)) {
+        seen.add(item);
+        out.push(item);
+      }
+      continue;
+    }
+
+    if (!seen.has(item)) {
+      seen.add(item);
+      out.push(item);
+    }
+  }
+
+  return out;
 }

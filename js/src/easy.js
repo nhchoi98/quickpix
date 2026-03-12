@@ -12,23 +12,10 @@ import { computeTargetSize, normalizeSource, getImageSize } from "./utils.js";
 import { readOrientation, extractSegments, injectSegments, orientationTransform } from "./metadata.js";
 import { WorkerPool } from "./worker-pool.js";
 import { resizeFromContext } from "./chunked-resize.js";
-import { normalizeWorkerSources, resolveWorkerURLs, warnMainThreadFallback } from "./worker-utils.js";
+import { normalizeWorkerSources, warnMainThreadFallback } from "./worker-utils.js";
+import { DEFAULT_PIPELINE_WORKER_FACTORIES } from "./worker-sources.js";
 
-let _defaultWorkerURL;
-const DEFAULT_PIPELINE_WORKER_CANDIDATES = [
-  "./pipeline-worker.js?worker&module",
-  "./pipeline-worker.js?worker",
-  "./pipeline-worker.js?url",
-  "./pipeline-worker.js?module",
-  "./pipeline-worker.js",
-];
-
-function getDefaultWorkerURL() {
-  if (_defaultWorkerURL === undefined) {
-    _defaultWorkerURL = resolveWorkerURLs(DEFAULT_PIPELINE_WORKER_CANDIDATES, import.meta.url);
-  }
-  return _defaultWorkerURL;
-}
+const DEFAULT_PIPELINE_WORKER_CANDIDATES = DEFAULT_PIPELINE_WORKER_FACTORIES;
 
 let _defaultWasmPath;
 function getDefaultWasmPath() {
@@ -43,7 +30,7 @@ function getDefaultWasmPath() {
 }
 
 function getWorkerSources(input) {
-  return normalizeWorkerSources(input, getDefaultWorkerURL());
+  return normalizeWorkerSources(input, DEFAULT_PIPELINE_WORKER_CANDIDATES);
 }
 
 function createWorkerFactory(sources) {
@@ -109,7 +96,7 @@ export class QuickPixEasy {
    * @param {boolean} [options.useWasm=true]
    * @param {boolean} [options.preserveMetadata=false]
    * @param {boolean} [options.autoRotate=true]
-   * @param {string|URL|Function|Array<string|URL|Function>} [options.workerURL]  - Override pipeline worker URL (for bundlers)
+   * @param {string|URL|Function|Array<string|URL|Function>} [options.workerURL] - Override pipeline worker source (string or factory) for custom bundlers
    * @param {boolean} [options.requireWorker=false] - Throw when worker pipeline cannot be created
    * @param {string} [options.wasmPath]   - Override WASM module path (for bundlers)
    */

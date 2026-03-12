@@ -5,6 +5,7 @@ export type ResizeFilter = "nearest" | "bilinear" | "box" | "hamming" | "lanczos
 export type FitMode = "contain" | "cover" | "fill";
 
 export type ImageMimeType = "image/png" | "image/jpeg" | "image/webp" | (string & {});
+export type WorkerSource = string | URL | (() => Worker | Promise<Worker>);
 
 // ── QuickPix (low-level engine) ─────────────────────────────────────────
 
@@ -15,7 +16,7 @@ export interface QuickPixOptions {
   tileSize?: number;
   filter?: ResizeFilter;
   concurrency?: number;
-  workerURL?: string | URL | (() => Worker | Promise<Worker>) | Array<string | URL | (() => Worker | Promise<Worker>)>;
+  workerURL?: WorkerSource | WorkerSource[];
   requireWorker?: boolean;
 }
 
@@ -76,7 +77,7 @@ export interface QuickPixEasyOptions {
   useWasm?: boolean;
   preserveMetadata?: boolean;
   autoRotate?: boolean;
-  workerURL?: string | URL | (() => Worker | Promise<Worker>) | Array<string | URL | (() => Worker | Promise<Worker>)>;
+  workerURL?: WorkerSource | WorkerSource[];
   requireWorker?: boolean;
   wasmPath?: string;
 }
